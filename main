@@ -1,0 +1,70 @@
+import random
+from pprint import pprint
+
+limit_cell = 15 # 1 cell 당 무게 제한 (kg)
+cycle = 3 # cycle 횟수
+limit_cycle_fix = limit_cell / cycle # 1 cycle 당 1 cell 무게 제한
+
+limit_cycle = 0
+k = 0
+
+val_A = 0
+val_B = 0
+val_C = 0
+val_D = 0
+val_E = 0
+val_F = 0
+val_G = 0
+val_H = 0
+
+a = [[val_A, val_B], # 4x2 list 생성
+     [val_C, val_D],
+     [val_E, val_F],
+     [val_G, val_H]]
+
+pprint(a)
+
+def cal_k(x): # 선택한 열 k 계산
+    k = ((a[1][x] - a[2][x]) + (a[0][x] - a[3][x]) * 3) / 4
+    return k
+
+def check_color(x, y): # 원하는 위치 색깔 체크
+    if 0 < a[x][y] <= 2:
+        print("Blue")
+    elif 2 < a[x][y] <= 4:
+        print("Green")
+    elif 4 < a[x][y] <= 6:
+        print("Yellow")
+    elif 6 < a[x][y] <= 8:
+        print("Orange")
+    elif 8 < a[x][y] <= 10:
+        print("Red")
+        
+def check_over(x, y, limit_cycle): # 원하는 위치 과적 체크
+    if a[x][y] > limit_cycle:
+        print("Stop Load!")
+        return 0
+    else:
+        print("Keep Load!")
+        return 1
+    
+for c in range(cycle):
+    limit_cycle = limit_cycle + limit_cycle_fix
+    print("limit_cycle =", limit_cycle)
+    for i in [0, 1]:
+        for j in [0, 1]:
+            while 1:
+                print("[" + str(j) + "]" + "[" + str(i) + "] =", a[j][i])
+                if check_over(j, i, limit_cycle - k) == 0:
+                    break
+                a[j][i] += random.uniform(1, 2)
+        for j in [2, 3]:
+            while 1:
+                print("[" + str(j) + "]" + "[" + str(i) + "] =", a[j][i])
+                if check_over(j, i, limit_cycle + k) == 0:
+                    break
+                a[j][i] += random.uniform(1, 2)
+        k = cal_k(i)
+        print("k =", k)
+    
+pprint(a)
