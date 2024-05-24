@@ -159,7 +159,7 @@ try:
         if READ_MODE == READ_MODE_POLLING_BASED:
             if current_time - last_measurement_time >= MEASUREMENT_INTERVAL:
                 sensor_data = readAllSensors()
-                make_a(sensor_data)
+                a = make_a(sensor_data)
                 printAll(sensor_data)
                 print(a)
                 last_measurement_time = current_time
