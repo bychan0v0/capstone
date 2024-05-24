@@ -1,0 +1,118 @@
+import time
+import sys
+import RPi.GPIO as GPIO
+from hx711 import HX711
+import bluetooth
+
+READ_MODE_INTERRUPT_BASED = "--interrupt-based"
+READ_MODE_POLLING_BASED = "--polling-based"
+READ_MODE = READ_MODE_INTERRUPT_BASED
+
+if len(sys.argv) > 1 and sys.argv[1] == READ_MODE_POLLING_BASED:
+    READ_MODE = READ_MODE_POLLING_BASED
+    print("[INFO] Read mode is 'polling based'.")
+else:
+    print("[INFO] Read mode is 'interrupt based'.")
+
+# HX711 모듈 초기화
+hx_list = [
+    HX711(21, 20),  # 센서 1
+    HX711(26, 19),  # 센서 2
+    HX711(16, 12),  # 센서 3
+    HX711(13, 6),   # 센서 4
+    HX711(1, 7),    # 센서 5
+    HX711(5, 0),    # 센서 6
+    HX711(8, 25),   # 센서 7
+    HX711(11, 9)    # 센서 8
+]
+
+# 각 센서의 레퍼런스 유닛 값 설정
+reference_units = [1, 177, 1, 1, 1, 1, 1, 1]
+
+# 레퍼런스 유닛과 오프셋 설정
+for i, hx in enumerate(hx_list):
+    hx.setReadingFormat("MSB", "MSB")
+    hx.autosetOffset()
+    hx.setReferenceUnit(reference_units[i])
+    print(f"[INFO] Sensor {i+1}: offset set to {hx.getOffset()}, reference unit set to {reference_units[i]}")
+
+# 블루투스 초기화
+server_sock = bluetooth.BluetoothSocket(bluetooth.RFCOMM)
+port = 22
+server_sock.bind(("", port))
+server_sock.listen(1)
+client_sock, address = server_sock.accept()
+print("Connection established with: ", address)
+
+# 측정 및 전송 주기 설정 (초 단위)
+MEASUREMENT_INTERVAL = 1.0  # 측정 주기: 1초
+BLUETOOTH_SEND_INTERVAL = 1.0  # 블루투스 전송 주기: 1초
+
+last_measurement_time = time.time()
+last_send_time = time.time()
+
+def printAll(sensor_data):
+    total_weight = sum(weight for _, weight in sensor_data)
+    sensor_outputs = ", ".join([f"SENSOR {sensor_id}: {weight:.2f} g" for sensor_id, weight in sensor_data])
+    output = f"999, {sensor_outputs}, TOTAL: {total_weight:.2f} g, 888"
+    print(output)
+    try:
+        client_sock.send(output + "\n")
+    except bluetooth.BluetoothError:
+        handle_bluetooth_disconnect()
+
+def readAllSensors():
+    sensor_data = []
+    for i, hx in enumerate(hx_list):
+        rawBytes = hx.getRawBytes()
+        long_value = hx.rawBytesToLong(rawBytes)
+        long_with_offset_value = hx.rawBytesToLongWithOffset(rawBytes)
+        weight = hx.rawBytesToWeight(rawBytes)
+        sensor_data.append((i + 1, weight))
+        print(f"[SENSOR {i + 1}] long: {long_value}, long with offset: {long_with_offset_value}, weight: {weight:.2f} g")
+    return sensor_data
+
+def enableCallbacks():
+    for i, hx in enumerate(hx_list):
+        hx.enableReadyCallback(lambda rawBytes, i=i, hx=hx: handleSensorData(i + 1, hx, rawBytes))
+
+def handleSensorData(sensor_id, hx, rawBytes):
+    global last_send_time
+    current_time = time.time()
+    # 일정 주기마다 데이터를 전송
+    if current_time - last_send_time >= BLUETOOTH_SEND_INTERVAL:
+        sensor_data = readAllSensors()
+        printAll(sensor_data)
+        last_send_time = current_time
+
+def handle_bluetooth_disconnect():
+    print("[INFO] Bluetooth connection lost. Cleaning up and exiting...")
+    GPIO.cleanup()
+    client_sock.close()
+    server_sock.close()
+    sys.exit()
+
+if READ_MODE == READ_MODE_INTERRUPT_BASED:
+    print("[INFO] Enabling the callback.")
+    enableCallbacks()
+
+try:
+    while True:
+        current_time = time.time()
+
+        if READ_MODE == READ_MODE_POLLING_BASED:
+            if current_time - last_measurement_time >= MEASUREMENT_INTERVAL:
+                sensor_data = readAllSensors()
+                printAll(sensor_data)
+                last_measurement_time = current_time
+
+        time.sleep(0.1)  # 주기 조정
+
+except (KeyboardInterrupt, SystemExit):
+    GPIO.cleanup()
+    client_sock.close()
+    server_sock.close()
+    print("[INFO] 'KeyboardInterrupt Exception' detected. Cleaning and exiting...")
+    sys.exit()
+except bluetooth.BluetoothError:
+    handle_bluetooth_disconnect()
