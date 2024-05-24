@@ -1,5 +1,6 @@
 import time
 import sys
+import numpy as np
 import RPi.GPIO as GPIO
 from hx711 import HX711
 import bluetooth
@@ -25,7 +26,7 @@ hx_list = [
     HX711(8, 25),   # 센서 7
     HX711(11, 9)    # 센서 8
 ]
-
+    
 # 각 센서의 레퍼런스 유닛 값 설정
 reference_units = [1, 177, 1, 1, 1, 1, 1, 1]
 
@@ -50,6 +51,12 @@ BLUETOOTH_SEND_INTERVAL = 1.0  # 블루투스 전송 주기: 1초
 
 last_measurement_time = time.time()
 last_send_time = time.time()
+
+# 알고리즘 기본 설정
+a = np.zeros((4, 2))
+limit_cell = 5000 # 1 cell 당 무게 제한 (gram)
+cycle = 3 # cycle 횟수
+limit_cycle_fix = limit_cell / cycle # 1 cycle 당 1 cell 무게 제한
 
 def printAll(sensor_data):
     total_weight = sum(weight for _, weight in sensor_data)
@@ -92,6 +99,55 @@ def handle_bluetooth_disconnect():
     server_sock.close()
     sys.exit()
 
+def make_a(sensor_data):
+    # val 선언
+    val_1 = sensor_data[0][1]
+    val_2 = sensor_data[1][1]
+    val_3 = sensor_data[2][1]
+    val_4 = sensor_data[3][1]
+    val_5 = sensor_data[4][1]
+    val_6 = sensor_data[5][1]
+    val_7 = sensor_data[6][1]
+    val_8 = sensor_data[7][1]
+
+    # 4x2 list 생성
+    a = [[val_1, val_2],
+     [val_3, val_4],
+     [val_5, val_6],
+     [val_7, val_8]]
+    return a
+
+def cal_k(a, x): # 선택한 열 k 계산
+    k = ((a[1][x] - a[2][x]) + (a[0][x] - a[3][x]) * 3) / 4
+    return k
+
+def check_over(a, x, y, limit_cycle): # 원하는 위치 과적 체크
+    if a[x][y] > limit_cycle:
+        print("Stop Load!")
+        return 0
+    else:
+        print("Keep Load!")
+        return 1
+    
+def algo(a):
+    for c in range(cycle):
+        limit_cycle = limit_cycle + limit_cycle_fix
+        print("limit_cycle =", limit_cycle)
+        for i in [0, 1]:
+            for j in [0, 1]:
+                while 1:
+                    print("[" + str(j) + "]" + "[" + str(i) + "] =", a[j][i])
+                    if check_over(j, i, limit_cycle - k) == 0:
+                        break
+            for j in [2, 3]:
+                while 1:
+                    print("[" + str(j) + "]" + "[" + str(i) + "] =", a[j][i])
+                    if check_over(j, i, limit_cycle + k) == 0:
+                        break
+            k = cal_k(i)
+            print("k =", k)
+            print()
+
 if READ_MODE == READ_MODE_INTERRUPT_BASED:
     print("[INFO] Enabling the callback.")
     enableCallbacks()
@@ -103,7 +159,9 @@ try:
         if READ_MODE == READ_MODE_POLLING_BASED:
             if current_time - last_measurement_time >= MEASUREMENT_INTERVAL:
                 sensor_data = readAllSensors()
+                make_a(sensor_data)
                 printAll(sensor_data)
+                print(a)
                 last_measurement_time = current_time
 
         time.sleep(0.1)  # 주기 조정
