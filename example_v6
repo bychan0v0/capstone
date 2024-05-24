@@ -4,6 +4,7 @@ import numpy as np
 import RPi.GPIO as GPIO
 from hx711 import HX711
 import bluetooth
+from pprint import pprint
 
 READ_MODE_INTERRUPT_BASED = "--interrupt-based"
 READ_MODE_POLLING_BASED = "--polling-based"
@@ -53,16 +54,16 @@ last_measurement_time = time.time()
 last_send_time = time.time()
 
 # 알고리즘 기본 설정
-a = np.zeros((4, 2))
-limit_cell = 5000 # 1 cell 당 무게 제한 (gram)
-cycle = 3 # cycle 횟수
-limit_cycle_fix = limit_cell / cycle # 1 cycle 당 1 cell 무게 제한
+limit_cell = 5000  # 1 cell 당 무게 제한 (gram)
+cycle = 3  # cycle 횟수
+limit_cycle = 0
+limit_cycle_fix = limit_cell / cycle  # 1 cycle 당 1 cell 무게 제한
+k = 0
 
 def printAll(sensor_data):
     total_weight = sum(weight for _, weight in sensor_data)
     sensor_outputs = ", ".join([f"SENSOR {sensor_id}: {weight:.2f} g" for sensor_id, weight in sensor_data])
     output = f"999, {sensor_outputs}, TOTAL: {total_weight:.2f} g, 888"
-    print(output)
     try:
         client_sock.send(output + "\n")
     except bluetooth.BluetoothError:
@@ -70,6 +71,8 @@ def printAll(sensor_data):
 
 def readAllSensors():
     sensor_data = []
+    print(f"-----SENSOR DATA-----")
+    print()
     for i, hx in enumerate(hx_list):
         rawBytes = hx.getRawBytes()
         long_value = hx.rawBytesToLong(rawBytes)
@@ -77,6 +80,7 @@ def readAllSensors():
         weight = hx.rawBytesToWeight(rawBytes)
         sensor_data.append((i + 1, weight))
         print(f"[SENSOR {i + 1}] long: {long_value}, long with offset: {long_with_offset_value}, weight: {weight:.2f} g")
+    print()
     return sensor_data
 
 def enableCallbacks():
@@ -112,39 +116,35 @@ def make_a(sensor_data):
 
     # 4x2 list 생성
     a = [[val_1, val_2],
-     [val_3, val_4],
-     [val_5, val_6],
-     [val_7, val_8]]
+         [val_3, val_4],
+         [val_5, val_6],
+         [val_7, val_8]]
     return a
 
-def cal_k(a, x): # 선택한 열 k 계산
+def cal_k(a, x):  # 선택한 열 k 계산
     k = ((a[1][x] - a[2][x]) + (a[0][x] - a[3][x]) * 3) / 4
     return k
 
-def check_over(a, x, y, limit_cycle): # 원하는 위치 과적 체크
+def check_over(a, x, y, limit_cycle):  # 원하는 위치 과적 체크
     if a[x][y] > limit_cycle:
-        print("Stop Load!")
         return 0
     else:
-        print("Keep Load!")
         return 1
-    
-def algo(a):
+
+def algo(a, limit_cycle, limit_cycle_fix, cycle):
     for c in range(cycle):
-        limit_cycle = limit_cycle + limit_cycle_fix
+        limit_cycle += limit_cycle_fix
         print("limit_cycle =", limit_cycle)
-        for i in [0, 1]:
-            for j in [0, 1]:
-                while 1:
-                    print("[" + str(j) + "]" + "[" + str(i) + "] =", a[j][i])
-                    if check_over(j, i, limit_cycle - k) == 0:
+        for i in range(2):
+            for j in range(2):
+                while True:
+                    if check_over(a, j, i, limit_cycle - cal_k(a, i)) == 0:
                         break
-            for j in [2, 3]:
-                while 1:
-                    print("[" + str(j) + "]" + "[" + str(i) + "] =", a[j][i])
-                    if check_over(j, i, limit_cycle + k) == 0:
+            for j in range(2, 4):
+                while True:
+                    if check_over(a, j, i, limit_cycle + cal_k(a, i)) == 0:
                         break
-            k = cal_k(i)
+            k = cal_k(a, i)
             print("k =", k)
             print()
 
@@ -159,12 +159,10 @@ try:
         if READ_MODE == READ_MODE_POLLING_BASED:
             if current_time - last_measurement_time >= MEASUREMENT_INTERVAL:
                 sensor_data = readAllSensors()
-                a = make_a(sensor_data)
                 printAll(sensor_data)
-                print(a)
                 last_measurement_time = current_time
 
-        time.sleep(0.1)  # 주기 조정
+        time.sleep(1)  # 주기 조정
 
 except (KeyboardInterrupt, SystemExit):
     GPIO.cleanup()
