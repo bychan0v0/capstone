@@ -1,10 +1,8 @@
-import time
 import sys
-import numpy as np
+import time
+import bluetooth
 import RPi.GPIO as GPIO
 from hx711 import HX711
-import bluetooth
-from pprint import pprint
 
 READ_MODE_INTERRUPT_BASED = "--interrupt-based"
 READ_MODE_POLLING_BASED = "--polling-based"
@@ -53,13 +51,6 @@ BLUETOOTH_SEND_INTERVAL = 1.0  # 블루투스 전송 주기: 1초
 last_measurement_time = time.time()
 last_send_time = time.time()
 
-# 알고리즘 기본 설정
-limit_cell = 5000  # 1 cell 당 무게 제한 (gram)
-cycle = 3  # cycle 횟수
-limit_cycle = 0
-limit_cycle_fix = limit_cell / cycle  # 1 cycle 당 1 cell 무게 제한
-k = 0
-
 def printAll(sensor_data):
     total_weight = sum(weight for _, weight in sensor_data)
     sensor_outputs = ", ".join([f"SENSOR {sensor_id}: {weight:.2f} g" for sensor_id, weight in sensor_data])
@@ -102,51 +93,6 @@ def handle_bluetooth_disconnect():
     client_sock.close()
     server_sock.close()
     sys.exit()
-
-def make_a(sensor_data):
-    # val 선언
-    val_1 = sensor_data[0][1]
-    val_2 = sensor_data[1][1]
-    val_3 = sensor_data[2][1]
-    val_4 = sensor_data[3][1]
-    val_5 = sensor_data[4][1]
-    val_6 = sensor_data[5][1]
-    val_7 = sensor_data[6][1]
-    val_8 = sensor_data[7][1]
-
-    # 4x2 list 생성
-    a = [[val_1, val_2],
-         [val_3, val_4],
-         [val_5, val_6],
-         [val_7, val_8]]
-    return a
-
-def cal_k(a, x):  # 선택한 열 k 계산
-    k = ((a[1][x] - a[2][x]) + (a[0][x] - a[3][x]) * 3) / 4
-    return k
-
-def check_over(a, x, y, limit_cycle):  # 원하는 위치 과적 체크
-    if a[x][y] > limit_cycle:
-        return 0
-    else:
-        return 1
-
-def algo(a, limit_cycle, limit_cycle_fix, cycle):
-    for c in range(cycle):
-        limit_cycle += limit_cycle_fix
-        print("limit_cycle =", limit_cycle)
-        for i in range(2):
-            for j in range(2):
-                while True:
-                    if check_over(a, j, i, limit_cycle - cal_k(a, i)) == 0:
-                        break
-            for j in range(2, 4):
-                while True:
-                    if check_over(a, j, i, limit_cycle + cal_k(a, i)) == 0:
-                        break
-            k = cal_k(a, i)
-            print("k =", k)
-            print()
 
 if READ_MODE == READ_MODE_INTERRUPT_BASED:
     print("[INFO] Enabling the callback.")
